@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Analyzer</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f7fa;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .card {
+            background-color: white;
+            border-radius: 8px;
+            padding: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #2c3e50;
+            margin-top: 0;
+        }
+        #image-preview {
+            width: 100%;
+            max-height: 400px;
+            object-fit: contain;
+            border-radius: 8px;
+            display: none;
+            margin-top: 15px;
+        }
+        .upload-area {
+            border: 2px dashed #3498db;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .upload-area:hover {
+            background-color: #ecf0f1;
+        }
+        .button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        .button:hover {
+            background-color: #2980b9;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .button-secondary {
+            background-color: #95a5a6;
+        }
+        .button-secondary:hover {
+            background-color: #7f8c8d;
+        }
+        .result-container {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+        }
+        .match-found {
+            background-color: #d5f5e3;
+            border-left: 5px solid #27ae60;
+        }
+        .no-match {
+            background-color: #fadbd8;
+            border-left: 5px solid #e74c3c;
+        }
+        .result-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        .result-title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .face-box {
+            position: absolute;
+            border: 3px solid #3498db;
+            border-radius: 4px;
+            display: none;
+        }
+        #preview-container {
+            position: relative;
+            margin-top: 15px;
+        }
+        .loading {
+            display: none;
+            margin-top: 15px;
+            text-align: center;
+            color: #7f8c8d;
+        }
+        .loading-spinner {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            border: 3px solid rgba(0,0,0,0.1);
+            border-radius: 50%;
+            border-top-color: #3498db;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>Face Analyzer</h1>
+            <p>Upload an image to check if it matches a face in the dataset.</p>
+            
+            <div class="upload-area" id="upload-area">
+                <p><strong>Drag & drop an image here</strong></p>
+                <p>or</p>
+                <input type="file" id="file-input" accept="image/*" style="display: none;">
+                <button class="button" id="select-file-button">Select Image</button>
+            </div>
+            
+            <div id="preview-container">
+                <img id="image-preview" alt="Preview">
+                <div id="face-box" class="face-box"></div>
+            </div>
+            
+            <div class="loading" id="loading">
+                <div class="loading-spinner"></div>
+                <span>Processing...</span>
+            </div>
+            
+            <div class="button-group" id="action-buttons" style="display: none;">
+                <button class="button" id="check-match-button">Check for Match</button>
+                <button class="button" id="add-to-dataset-button">Add to Dataset</button>
+                <button class="button button-secondary" id="reset-button">Reset</button>
+            </div>
+            
+            <div id="result-container" class="result-container">
+                <div class="result-icon" id="result-icon"></div>
+                <div class="result-title" id="result-title"></div>
+                <div id="result-details"></div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>Response Details</h2>
+            <pre id="raw-response" style="background-color: #f8f9fa; padding: 15px; border-radius: 4px; overflow: auto;"></pre>
+        </div>
+    </div>
+
+    <script>
+        // API Configuration
+        const API_BASE_URL = 'http://localhost:5000/api';
+        const API_ENDPOINTS = {
+            detect: `${API_BASE_URL}/detect`,
+            addToDataset: `${API_BASE_URL}/dataset/add`,
+            checkInDataset: `${API_BASE_URL}/dataset/check`
+        };
+
+        // DOM Elements
+        const fileInput = document.getElementById('file-input');
+        const uploadArea = document.getElementById('upload-area');
+        const selectFileButton = document.getElementById('select-file-button');
+        const imagePreview = document.getElementById('image-preview');
+        const faceBox = document.getElementById('face-box');
+        const checkMatchButton = document.getElementById('check-match-button');
+        const addToDatasetButton = document.getElementById('add-to-dataset-button');
+        const resetButton = document.getElementById('reset-button');
+        const actionButtons = document.getElementById('action-buttons');
+        const resultContainer = document.getElementById('result-container');
+        const resultIcon = document.getElementById('result-icon');
+        const resultTitle = document.getElementById('result-title');
+        const resultDetails = document.getElementById('result-details');
+        const rawResponse = document.getElementById('raw-response');
+        const loading = document.getElementById('loading');
+
+        // Global variables
+        let imageData = null;
+
+        // Event Listeners
+        selectFileButton.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFileSelect);
+        uploadArea.addEventListener('dragover', handleDragOver);
+        uploadArea.addEventListener('drop', handleDrop);
+        checkMatchButton.addEventListener('click', checkForMatch);
+        addToDatasetButton.addEventListener('click', addToDataset);
+        resetButton.addEventListener('click', resetInterface);
+
+        // Functions
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            uploadArea.style.backgroundColor = '#ecf0f1';
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            uploadArea.style.backgroundColor = '';
+            
+            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                processFile(e.dataTransfer.files[0]);
+            }
+        }
+
+        function handleFileSelect(e) {
+            if (e.target.files && e.target.files[0]) {
+                processFile(e.target.files[0]);
+            }
+        }
+
+        function processFile(file) {
+            // Check if the file is an image
+            if (!file.type.match('image.*')) {
+                alert('Please select an image file.');
+                return;
+            }
+
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                imageData = e.target.result;
+                imagePreview.src = imageData;
+                imagePreview.style.display = 'block';
+                actionButtons.style.display = 'flex';
+                resultContainer.style.display = 'none';
+                faceBox.style.display = 'none';
+            };
+            
+            reader.readAsDataURL(file);
+        }
+
+        async function checkForMatch() {
+            if (!imageData) {
+                alert('Please select an image first.');
+                return;
+            }
+
+            showLoading(true);
+            
+            try {
+                // First detect if there's a face in the image
+                const detectResponse = await fetch(API_ENDPOINTS.detect, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        image: imageData
+                    })
+                });
+
+                const detectData = await detectResponse.json();
+                
+                if (!detectResponse.ok) {
+                    throw new Error(detectData.error || 'Error detecting face');
+                }
+
+                // Display raw response
+                rawResponse.textContent = JSON.stringify(detectData, null, 2);
+                
+                // Check if faces were detected
+                if (detectData.faces && detectData.faces.length > 0) {
+                    // Display face box
+                    const face = detectData.faces[0];
+                    const box = face.box;
+                    
+                    faceBox.style.left = `${box.x}px`;
+                    faceBox.style.top = `${box.y}px`;
+                    faceBox.style.width = `${box.width}px`;
+                    faceBox.style.height = `${box.height}px`;
+                    faceBox.style.display = 'block';
+                    
+                    // Check if the face is in the dataset
+                    displayResults(detectData.in_dataset);
+                } else {
+                    // No face detected
+                    resultContainer.className = 'result-container no-match';
+                    resultIcon.innerHTML = '❌';
+                    resultTitle.textContent = 'No Face Detected';
+                    resultDetails.textContent = 'No face was detected in the uploaded image.';
+                    resultContainer.style.display = 'block';
+                    faceBox.style.display = 'none';
+                }
+                
+            } catch (err) {
+                console.error('Error:', err);
+                resultContainer.className = 'result-container no-match';
+                resultIcon.innerHTML = '❌';
+                resultTitle.textContent = 'Error';
+                resultDetails.textContent = err.message;
+                resultContainer.style.display = 'block';
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function addToDataset() {
+            if (!imageData) {
+                alert('Please select an image first.');
+                return;
+            }
+
+            showLoading(true);
+            
+            try {
+                const response = await fetch(API_ENDPOINTS.addToDataset, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        image: imageData
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Error adding to dataset');
+                }
+
+                // Display raw response
+                rawResponse.textContent = JSON.stringify(data, null, 2);
+                
+                // Display success message
+                resultContainer.className = 'result-container match-found';
+                resultIcon.innerHTML = '✅';
+                resultTitle.textContent = 'Added to Dataset';
+                resultDetails.textContent = `The image has been successfully added to the dataset with hash: ${data.hash}`;
+                resultContainer.style.display = 'block';
+                
+            } catch (err) {
+                console.error('Error:', err);
+                resultContainer.className = 'result-container no-match';
+                resultIcon.innerHTML = '❌';
+                resultTitle.textContent = 'Error';
+                resultDetails.textContent = err.message;
+                resultContainer.style.display = 'block';
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function displayResults(isMatch) {
+            if (isMatch) {
+                resultContainer.className = 'result-container match-found';
+                resultIcon.innerHTML = '✅';
+                resultTitle.textContent = 'Match Found';
+                resultDetails.textContent = 'This face matches an image in the dataset.';
+            } else {
+                resultContainer.className = 'result-container no-match';
+                resultIcon.innerHTML = '❓';
+                resultTitle.textContent = 'No Match Found';
+                resultDetails.textContent = 'This face does not match any image in the dataset. Would you like to add it?';
+            }
+            
+            resultContainer.style.display = 'block';
+        }
+
+        function resetInterface() {
+            imageData = null;
+            imagePreview.src = '';
+            imagePreview.style.display = 'none';
+            faceBox.style.display = 'none';
+            actionButtons.style.display = 'none';
+            resultContainer.style.display = 'none';
+            rawResponse.textContent = '';
+            fileInput.value = '';
+        }
+
+        function showLoading(isLoading) {
+            loading.style.display = isLoading ? 'block' : 'none';
+        }
+    </script>
+</body>
+</html>
